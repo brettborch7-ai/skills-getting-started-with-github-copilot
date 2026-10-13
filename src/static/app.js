@@ -4,32 +4,66 @@ document.addEventListener("DOMContentLoaded", () => {
   const signupForm = document.getElementById("signup-form");
   const messageDiv = document.getElementById("message");
 
-  // Function to fetch activities from API
+  function showStatus(message, type) {
+    messageDiv.textContent = message;
+    messageDiv.className = type;
+    messageDiv.classList.remove("hidden");
+
+    setTimeout(() => {
+      messageDiv.classList.add("hidden");
+    }, 5000);
+  }
+
   async function fetchActivities() {
     try {
       const response = await fetch("/activities");
       const activities = await response.json();
 
-      // Clear loading message
       activitiesList.innerHTML = "";
+      activitySelect.innerHTML = '<option value="">-- Select an activity --</option>';
 
-      // Populate activities list
       Object.entries(activities).forEach(([name, details]) => {
         const activityCard = document.createElement("div");
         activityCard.className = "activity-card";
 
         const spotsLeft = details.max_participants - details.participants.length;
+        const participantsList = details.participants && details.participants.length
+          ? details.participants
+              .map(
+                (email) => `
+                  <li class="participant-item">
+                    <span class="participant-email">${email}</span>
+                    <button
+                      type="button"
+                      class="participant-delete"
+                      data-activity="${name}"
+                      data-email="${email}"
+                      aria-label="Remove ${email}"
+                      title="Remove ${email}"
+                    >
+                      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                        <path d="M9 3h6l1 2h4v2H4V5h4l1-2zm-2 6h2v9H7V9zm8 0h2v9h-2V9zM10 9h2v9h-2V9z"/>
+                      </svg>
+                    </button>
+                  </li>
+                `
+              )
+              .join("")
+          : "<li class='participant-empty'>No participants yet</li>";
 
         activityCard.innerHTML = `
           <h4>${name}</h4>
           <p>${details.description}</p>
           <p><strong>Schedule:</strong> ${details.schedule}</p>
           <p><strong>Availability:</strong> ${spotsLeft} spots left</p>
+          <div class="participants-section">
+            <p><strong>Participants:</strong></p>
+            <ul class="participants-list">${participantsList}</ul>
+          </div>
         `;
 
         activitiesList.appendChild(activityCard);
 
-        // Add option to select dropdown
         const option = document.createElement("option");
         option.value = name;
         option.textContent = name;
@@ -41,7 +75,35 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // Handle form submission
+  activitiesList.addEventListener("click", async (event) => {
+    const deleteButton = event.target.closest(".participant-delete");
+    if (!deleteButton) return;
+
+    const activity = deleteButton.dataset.activity;
+    const email = deleteButton.dataset.email;
+
+    try {
+      const response = await fetch(
+        `/activities/${encodeURIComponent(activity)}/signup?email=${encodeURIComponent(email)}`,
+        {
+          method: "DELETE",
+        }
+      );
+
+      const result = await response.json();
+
+      if (response.ok) {
+        showStatus(result.message, "success");
+        await fetchActivities();
+      } else {
+        showStatus(result.detail || "Unable to remove participant.", "error");
+      }
+    } catch (error) {
+      showStatus("Failed to remove participant. Please try again.", "error");
+      console.error("Error removing participant:", error);
+    }
+  });
+
   signupForm.addEventListener("submit", async (event) => {
     event.preventDefault();
 
@@ -59,28 +121,17 @@ document.addEventListener("DOMContentLoaded", () => {
       const result = await response.json();
 
       if (response.ok) {
-        messageDiv.textContent = result.message;
-        messageDiv.className = "success";
+        showStatus(result.message, "success");
         signupForm.reset();
+        await fetchActivities();
       } else {
-        messageDiv.textContent = result.detail || "An error occurred";
-        messageDiv.className = "error";
+        showStatus(result.detail || "An error occurred", "error");
       }
-
-      messageDiv.classList.remove("hidden");
-
-      // Hide message after 5 seconds
-      setTimeout(() => {
-        messageDiv.classList.add("hidden");
-      }, 5000);
     } catch (error) {
-      messageDiv.textContent = "Failed to sign up. Please try again.";
-      messageDiv.className = "error";
-      messageDiv.classList.remove("hidden");
+      showStatus("Failed to sign up. Please try again.", "error");
       console.error("Error signing up:", error);
     }
   });
 
-  // Initialize app
   fetchActivities();
 });
